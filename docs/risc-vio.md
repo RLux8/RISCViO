@@ -158,7 +158,7 @@ This makes it necessary for system management software to load in code in the fo
 The 'io' bit marks the tags as belonging to an I/O device as described in the [objects and I/O devices](#objects_devices) section.
 
 The permission bits 'r' and 'w' state whether an object or I/O device may be read or written using load and store instructions.
-Both may be set or cleared in any combination, except for executable objects which always have both permission bits cleared.
+Both may be set or cleared in any combination, except for executable objects which always have both permission bits cleared. An implementation does not have to be able to represent all combinations (see [st](#st)).
 
 The two scratch bits are not interpreted by the hardware and may be used freely by the system management software.
 All bits above the scratch bits are implementation specific. Some of them may for example be reserved by a hardware garbage collector.
@@ -535,7 +535,12 @@ The *lt* instruction may trigger the following exceptions for the given events (
 #### st-instruction {#st}
 
 The *st* instruction is the companion of the *lt* instruction, allowing object or I/O device tags to be written. For this, *st* sets the tags of the object or I/O device being referenced by the content of the rs1 register to the tags provided in rs2 in form of a primitive.
-*lt* and *st* are completely symmetric: the tags returned by *lt* can be passed to *st* unchanged and vice versa.
+The tags returned by *lt* can be passed to *st* unchanged, but *st* does not accept all values: like the WARL (write any, read legal) fields of RISC-V, the tags can be written with any value, while an implementation does not have to be able to represent all of them.
+Writing a value which is not representable does not raise an exception, what happens to the tags in this case is implementation dependent. *lt* always returns the tags the object or I/O device actually has.
+
+::: note
+Note: A program has to verify the success of *st* by reading the tags back using *lt* and comparing them to the requested value.
+:::
 
 ::: encoding
 | 31:25   | 24:20    | 19:15     | 14:12 | 11:7  | 6:0     | Instruction |
