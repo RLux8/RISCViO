@@ -249,8 +249,9 @@ Offsets from those pointers using the 12 bit immediate present in those instruct
 Those offsets are added to the index of the pointer used to access the object to make up the offset used for the actual object or I/O device access.
 Being explicit memory accesses in the case of pointers of memory kind, these instructions may only access ordinary as well as data only objects.
 Pointers always occupy a whole XLEN wide, aligned element of an object.
-Loading only part of an element holding a pointer using a narrower load (*lb*, *lbu*, *lh*, *lhu* as well as *lw*, *lwu* on RV64) leads to an *IncompatibleTypeException*.
+Loading only part of an element holding a pointer using a narrower load (*lb*, *lbu*, *lh*, *lhu* as well as *lw*, *lwu* on RV64) leads to a *LoadAccessFault*. This applies in all privilege modes.
 A narrower store (*sb*, *sh* as well as *sw* on RV64) into an element holding a pointer first clears the whole element and then writes the stored bytes, overwriting the pointer.
+Pointers can only be stored as a whole: storing a pointer using a narrower store (*sb*, *sh* as well as *sw* on RV64) leads to a *StoreAccessFault* and leaves the object unchanged. This applies in all privilege modes.
 XLEN wide loads and stores (*lw*/*sw* on RV32, *ld*/*sd* on RV64) work on elements holding pointers and primitives alike.
 Whenever one of these rules is broken, the processor raises a hardware exception. Which exception is raised in which case is listed in the [exceptions](#exceptions) chapter.
 
@@ -304,7 +305,7 @@ The creation of ISA level objects on the heap is achieved by the alc-instruction
 In fact the alc instruction family is the only way to create new objects in user mode.
 The next section provides a short description of those instructions alongside their bit encodings.
 The objects allocated by the alc-instruction family are both readable and writable but not executable on allocation (their 'read' and 'write' bits are set).
-Newly allocated objects only contain the primitive value 0.
+Newly allocated objects only contain the primitive value 0. The processor clears memory neither on reset nor on allocation, so meeting this requirement is up to software (see [memory clearing](#clr)).
 Object sizes are byte granular: an object is exactly as long as requested at its allocation, and an access is only within its bounds if all of its bytes are.
 If the size is not a multiple of XLEN/8, the last element only partly belongs to the object, so a word access to that element raises an *IndexOutOfBoundsException*.
 
@@ -551,10 +552,9 @@ The *st* instruction may trigger the following exceptions for the given events (
 
 ### Memory clearing: clr {#clr}
 
-To enable garbage collection in software, it is necessary to be able to clear out certain memory regions.
-This is a consequence of mandating that newly allocated objects may only contain the primitive value 0.
-A garbage collector implemented in software is able to use the *clr* instruction to ensure that this requirement is met.
-This is achieved by this instruction writing the primitive value 0 of XLEN width to the memory address given by the contents of register rs1.
+Newly allocated objects may only contain the primitive value 0, but the processor clears memory neither on reset nor on allocation.
+Meeting this requirement is up to software: the system management software clears the heap during the [boot sequence](#boot_sequence), and from then on a garbage collector clears the memory it releases.
+Both are able to use the *clr* instruction for this, which writes the primitive value 0 of XLEN width to the memory address given by the contents of register rs1.
 This address has to be aligned accordingly.
 
 ::: encoding
@@ -770,9 +770,9 @@ Since the object length is known on ISA level, the processor is able to raise a 
 In case of such an exception, *xtval* will contain the base pointer as well as the index which was beyond the object bounds.
 The processor is also able to detect whether the destination object is compatible with the current access type by checking the permission tags of the object.
 In consequence, *LoadAccessFault*, *StoreAccessFault* or *IncompatibleTypeException* are raised when the corresponding flag is not set as per [object tags](#isa_tags).
-*LoadAccessFault*s are triggered when the 'read' flag is cleared while *StoreAccessFault* is raised in case of a store access to an object with cleared 'write' flag.
+*LoadAccessFault*s are triggered when the 'read' flag is cleared and when loading only part of an element holding a pointer, while *StoreAccessFault* is raised in case of a store access to an object with cleared 'write' flag and when storing a pointer using a narrower store.
 Trying to store pointers to a data only object marked by a set 'data only' flag will lead to a *IncompatibleTypeException*.
-The same exception is triggered when trying to jump to an object which is not executable using *jalr*, when trying to do an arithmetic, logic or ordered comparison operation on two pointers referencing different objects or I/O devices, when trying any arithmetic operation other than *sub* on two pointers, when comparing a pointer with a primitive using an ordered comparison or when loading only part of an element holding a pointer.
+The same exception is triggered when trying to jump to an object which is not executable using *jalr*, when trying to do an arithmetic, logic or ordered comparison operation on two pointers referencing different objects or I/O devices, when trying any arithmetic operation other than *sub* on two pointers, or when comparing a pointer with a primitive using an ordered comparison.
 
 Trying to access the register *gp* for anything other than as an access pointer in a memory instruction will lead to a *GPAccessException*.
 
@@ -1338,9 +1338,10 @@ From then on, the system management software runs in pointer mode:
 5. The trap vector *mtvec* is set to a pointer into the code object.
 6. The dynamic relocations of the system management software are applied. The linker could only write link-time addresses into the GOT and into initialised pointers, so each of them is turned into a pointer into the code object, the read-only data object or the copy of the writable data. Since the image is linked as a static PIE, only *R_RISCV_RELATIVE* occurs.
    This step cannot be skipped: the constant data of the system management software is only reachable through the GOT, and only the boot code can turn these numbers into pointers.
-7. Since the processor starts up in the irregular state, a frame object has to be allocated using *alc* or *alci* before any function can be called. With compiled code, this is done by the prologue of the first function called.
-8. The program and its libraries are loaded as described in [loading a program](#loading).
-9. The program is entered in user mode: *mepc* is set to a pointer to its entry point, *mstatus.MPP* is set to user mode and *gp* is set to the GOT of the program, since *mret* does not load *gp*. Before executing *mret*, all frame objects of the system management software are released, so the frames of the program do not chain onto them.
+7. The heap is cleared, for example using [clr](#clr), since the processor clears memory neither on reset nor on allocation. This covers the free part of the heap, from the heap limit up to the allocation address in *malc*. The object allocated in step 2 lies above that address and was written completely, so it does not need to be cleared.
+8. Since the processor starts up in the irregular state, a frame object has to be allocated using *alc* or *alci* before any function can be called. With compiled code, this is done by the prologue of the first function called.
+9. The program and its libraries are loaded as described in [loading a program](#loading).
+10. The program is entered in user mode: *mepc* is set to a pointer to its entry point, *mstatus.MPP* is set to user mode and *gp* is set to the GOT of the program, since *mret* does not load *gp*. Before executing *mret*, all frame objects of the system management software are released, so the frames of the program do not chain onto them.
 
 From then on, the system management software only runs in traps.
 
