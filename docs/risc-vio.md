@@ -184,6 +184,7 @@ The same restriction applies to ordered comparisons of two pointers: they act on
 Trying to execute any of these operations on two pointers referencing different objects or I/O devices leads to an *IncompatibleTypeException*.
 To check whether two pointers reference the same object, the [bso](#so_fam) instructions are provided.\
 Ordered comparisons of a pointer with a primitive are not allowed either and lead to an *IncompatibleTypeException*.
+For all *IncompatibleTypeException*s caused by operations on two pointers or by ordered comparisons, *xtval* contains the value of rs1.
 Equality comparisons (*beq*, *bne*), in contrast, are always allowed. Two pointers are equal if they reference the same object or I/O device with the same index.
 A pointer and a primitive are never equal. Thus, comparing a pointer with the *zero* register always yields 'not equal', which matches the semantics of a null pointer check in C.
 Note that *seqz* and *snez* are realized using *sltiu*/*sltu* in RISC-V and are therefore ordered comparisons, which may not be used on pointers.
@@ -778,6 +779,7 @@ In consequence, *LoadAccessFault*, *StoreAccessFault* or *IncompatibleTypeExcept
 *LoadAccessFault*s are triggered when the 'read' flag is cleared and when loading only part of an element holding a pointer, while *StoreAccessFault* is raised in case of a store access to an object with cleared 'write' flag and when storing a pointer using a narrower store.
 Trying to store pointers to a data only object marked by a set 'data only' flag will lead to a *IncompatibleTypeException*.
 The same exception is triggered when trying to jump to an object which is not executable using *jalr*, when trying to do an arithmetic, logic or ordered comparison operation on two pointers referencing different objects or I/O devices, when trying any arithmetic operation other than *sub* on two pointers, or when comparing a pointer with a primitive using an ordered comparison.
+For these operations and comparisons, *xtval* contains the value of rs1.
 
 Trying to access the register *gp* for anything other than as an access pointer in a memory instruction will lead to a *GPAccessException*.
 
